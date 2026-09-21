@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentic-invoice-sap-config
+data:
+  ANTHROPIC_MODEL: "claude-opus-5"
+  SAP_BASE_URL: "https://my-s4hana-system.example.com"
+  SAP_CLIENT: "100"
+  SAP_DEFAULT_COMPANY_CODE: "1000"
+  SAP_GL_ACCOUNT_FALLBACK: "0000400000"
+  PDF_INBOX_DIR: "/app/data/inbox"
+  PDF_PROCESSED_DIR: "/app/data/processed"
+  PDF_FAILED_DIR: "/app/data/failed"
+  LEDGER_DB_PATH: "/app/data/ledger.sqlite3"
+  POLL_INTERVAL_SECONDS: "60"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentic-invoice-sap
+spec:
+  replicas: 1 # keep at 1: the SQLite ledger is a single-writer idempotency store
+  selector:
+    matchLabels:
+      app: agentic-invoice-sap
+  template:
+    metadata:
+      labels:
+        app: agentic-invoice-sap
+    spec:
+      containers:
+        - name: agentic-invoice-sap
+          image: agentic-invoice-sap:latest
+          args: ["--watch"]
+          envFrom:
+            - configMapRef:
+                name: agentic-invoice-sap-config
+            - secretRef:
+                name: agentic-invoice-sap-secrets
+          volumeMounts:
+            - name: invoice-data
+              mountPath: /app/data
+      volumes:
+        - name: invoice-data
+          persistentVolumeClaim:
+            claimName: agentic-invoice-sap-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: agentic-invoice-sap-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
